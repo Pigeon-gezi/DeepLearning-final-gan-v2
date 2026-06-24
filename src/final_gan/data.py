@@ -73,12 +73,17 @@ def build_dataloader(config: dict, shuffle: bool = True) -> DataLoader:
     data_cfg = config.get("data", {})
     batch_size = int(train_cfg.get("batch_size", 64))
     num_workers = int(data_cfg.get("num_workers", 2))
+    persistent_workers = bool(data_cfg.get("persistent_workers", False)) and num_workers > 0
+    prefetch_factor = int(data_cfg.get("prefetch_factor", 2)) if num_workers > 0 else None
     pin_memory = torch.cuda.is_available()
-    return DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        drop_last=shuffle,
-    )
+    kwargs = {
+        "batch_size": batch_size,
+        "shuffle": shuffle,
+        "num_workers": num_workers,
+        "pin_memory": pin_memory,
+        "drop_last": shuffle,
+        "persistent_workers": persistent_workers,
+    }
+    if prefetch_factor is not None:
+        kwargs["prefetch_factor"] = prefetch_factor
+    return DataLoader(dataset, **kwargs)

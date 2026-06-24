@@ -12,7 +12,7 @@ from tqdm import tqdm
 from final_gan.config import save_config
 from final_gan.data import build_dataloader
 from final_gan.factory import build_discriminator, build_generator, initialize_models
-from final_gan.metrics import evaluate_generator
+from final_gan.metrics import ImageMetricsEvaluator
 from final_gan.utils import append_jsonl, count_parameters, denormalize, ensure_dir, get_device, set_seed
 
 
@@ -75,6 +75,7 @@ def train(config: dict) -> None:
 
     fixed_noise = torch.randn(64, z_dim, device=device)
     best_fid = float("inf")
+    evaluator = None
     start_time = time.time()
     print(f"Using device: {device}")
     print(f"Generator parameters: {count_parameters(generator):,}")
@@ -134,15 +135,16 @@ def train(config: dict) -> None:
 
         if epoch % int(config["eval"].get("compute_every_epochs", 10)) == 0:
             try:
-                metrics = evaluate_generator(
-                    generator,
-                    eval_loader,
-                    model_name=model_name,
-                    z_dim=z_dim,
-                    device=device,
-                    num_images=int(config["eval"].get("num_images", 2048)),
-                    batch_size=int(config["eval"].get("batch_size", 64)),
-                )
+                if evaluator is None:
+                    evaluator = ImageMetricsEvaluator(
+                        dataloader=eval_loader,
+                        model_name=model_name,
+                        z_dim=z_dim,
+                        device=device,
+                        num_images=int(config["eval"].get("num_images", 2048)),
+                        batch_size=int(config["eval"].get("batch_size", 64)),
+                    )
+                metrics = evaluator.evaluate(generator)
                 row.update(metrics)
                 if metrics["fid"] < best_fid:
                     best_fid = metrics["fid"]

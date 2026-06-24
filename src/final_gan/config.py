@@ -15,6 +15,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "dataset": "recursive_images",
         "image_size": 64,
         "num_workers": 2,
+        "prefetch_factor": 2,
+        "persistent_workers": False,
     },
     "model": {
         "name": "dcgan",
