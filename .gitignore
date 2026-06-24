@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+pytest-cache-files-*/
+.venv/
+.vscode/
+.claude/
+.agents/
+
+data/
+runs/
+*.pt
+*.pth
