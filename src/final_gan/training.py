@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
@@ -48,7 +49,60 @@ def save_checkpoint(
     )
 
 
-def train(config: dict) -> None:
+def load_best_fid(log_path: str | Path, checkpoint_metrics: dict | None = None) -> float:
+    best_fid = float("inf")
+    log_path = Path(log_path)
+    if log_path.exists():
+        try:
+            with log_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    row = json.loads(line)
+                    if "fid" in row:
+                        best_fid = min(best_fid, float(row["fid"]))
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            best_fid = float("inf")
+    if best_fid == float("inf") and checkpoint_metrics and "fid" in checkpoint_metrics:
+        try:
+            best_fid = float(checkpoint_metrics["fid"])
+        except (TypeError, ValueError):
+            pass
+    return best_fid
+
+
+def load_training_checkpoint(
+    checkpoint_path: str | Path,
+    generator: nn.Module,
+    discriminator: nn.Module,
+    opt_g: torch.optim.Optimizer,
+    opt_d: torch.optim.Optimizer,
+    config: dict,
+    device: torch.device,
+) -> tuple[int, dict]:
+    checkpoint_path = Path(checkpoint_path)
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    ckpt_config = checkpoint.get("config", {})
+    ckpt_model = ckpt_config.get("model", {}).get("name")
+    current_model = config.get("model", {}).get("name")
+    if ckpt_model is not None and ckpt_model != current_model:
+        raise RuntimeError(
+            f"Checkpoint model '{ckpt_model}' does not match current config model '{current_model}'."
+        )
+    required = ["epoch", "generator", "discriminator", "opt_g", "opt_d"]
+    missing = [key for key in required if key not in checkpoint]
+    if missing:
+        raise RuntimeError(f"Checkpoint is missing required fields: {', '.join(missing)}")
+
+    generator.load_state_dict(checkpoint["generator"])
+    discriminator.load_state_dict(checkpoint["discriminator"])
+    opt_g.load_state_dict(checkpoint["opt_g"])
+    opt_d.load_state_dict(checkpoint["opt_d"])
+    start_epoch = int(checkpoint["epoch"]) + 1
+    return start_epoch, checkpoint.get("metrics", {})
+
+
+def train(config: dict, resume_from: str | Path | None = None) -> None:
     set_seed(int(config.get("seed", 42)))
     device = get_device(config.get("device", "auto"))
     output_dir = ensure_dir(config["paths"]["output_dir"])
@@ -74,14 +128,38 @@ def train(config: dict) -> None:
     opt_d = Adam(discriminator.parameters(), lr=float(train_cfg["lr"]), betas=(float(train_cfg["beta1"]), float(train_cfg["beta2"])))
 
     fixed_noise = torch.randn(64, z_dim, device=device)
-    best_fid = float("inf")
+    start_epoch = 1
+    checkpoint_metrics: dict = {}
+    if resume_from is not None:
+        start_epoch, checkpoint_metrics = load_training_checkpoint(
+            resume_from,
+            generator,
+            discriminator,
+            opt_g,
+            opt_d,
+            config,
+            device,
+        )
+        print(f"Resumed from {resume_from} at epoch {start_epoch - 1}.")
+
+    best_fid = load_best_fid(log_path, checkpoint_metrics)
     evaluator = None
     start_time = time.time()
     print(f"Using device: {device}")
     print(f"Generator parameters: {count_parameters(generator):,}")
     print(f"Discriminator parameters: {count_parameters(discriminator):,}")
+    if best_fid < float("inf"):
+        print(f"Best historical FID: {best_fid:.4f}")
 
-    for epoch in range(1, int(train_cfg["epochs"]) + 1):
+    total_epochs = int(train_cfg["epochs"])
+    if start_epoch > total_epochs:
+        print(
+            f"Checkpoint already reached epoch {start_epoch - 1}; "
+            f"target epochs is {total_epochs}. Nothing to train."
+        )
+        return
+
+    for epoch in range(start_epoch, total_epochs + 1):
         generator.train()
         discriminator.train()
         epoch_g = 0.0

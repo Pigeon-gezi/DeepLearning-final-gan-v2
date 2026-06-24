@@ -19,7 +19,7 @@ def cmd_train(args: argparse.Namespace) -> None:
         config["data"]["root"] = args.data_root
     if args.output_dir:
         config["paths"]["output_dir"] = args.output_dir
-    train(config)
+    train(config, resume_from=args.resume)
 
 
 def cmd_generate(args: argparse.Namespace) -> None:
@@ -77,6 +77,7 @@ def build_parser() -> argparse.ArgumentParser:
     train_parser.add_argument("--config", required=True, type=Path)
     train_parser.add_argument("--data-root", default=None)
     train_parser.add_argument("--output-dir", default=None)
+    train_parser.add_argument("--resume", default=None, type=Path)
     train_parser.set_defaults(func=cmd_train)
 
     gen_parser = subparsers.add_parser("generate", help="Generate a sample grid from a checkpoint.")
