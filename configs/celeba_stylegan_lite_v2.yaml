@@ -1,0 +1,49 @@
+seed: 42
+device: auto
+
+data:
+  root: data/celeba
+  dataset: recursive_images
+  image_size: 64
+  num_workers: 4
+  prefetch_factor: 2
+  persistent_workers: true
+
+model:
+  name: stylegan_lite_v2
+  z_dim: 128
+  w_dim: 256
+  style_mixing_prob: 0.1
+  use_minibatch_std: true
+
+train:
+  epochs: 30
+  batch_size: 64
+  lr: 0.0002
+  lr_g: 0.0002
+  lr_d: 0.00005
+  beta1: 0.5
+  beta2: 0.999
+  loss: non_saturating
+  r1_gamma: 10.0
+  r1_interval: 16
+  ema_beta: 0.999
+  real_label: 0.9
+  fake_label: 0.0
+  sample_every_epochs: 1
+  checkpoint_every_epochs: 1
+
+eval:
+  compute_every_epochs: 5
+  num_images: 2048
+  batch_size: 64
+  diversity:
+    enabled: true
+    metric: ms_ssim
+    num_images: 512
+    max_pairs: 512
+    pair_batch_size: 64
+    ms_ssim_betas: [0.3, 0.3, 0.4]
+
+paths:
+  output_dir: runs/stylegan_lite_v2_celeba

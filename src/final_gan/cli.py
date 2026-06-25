@@ -64,6 +64,7 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
         device=device,
         num_images=int(config["eval"].get("num_images", 2048)),
         batch_size=int(config["eval"].get("batch_size", 64)),
+        diversity_config=config["eval"].get("diversity", {}),
     )
     for key, value in metrics.items():
         print(f"{key}: {value:.6f}")

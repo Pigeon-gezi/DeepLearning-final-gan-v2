@@ -111,3 +111,48 @@ class StyleGANLiteGenerator(nn.Module):
         for idx, block in enumerate(self.blocks):
             x = block(x, w if idx < cutoff else w2)
         return self.to_rgb(x)
+
+
+class StyleGANLiteV2Generator(nn.Module):
+    def __init__(self, z_dim: int = 128, w_dim: int = 256, image_channels: int = 3) -> None:
+        super().__init__()
+        self.z_dim = z_dim
+        self.w_dim = w_dim
+        self.mapping = MappingNetwork(z_dim=z_dim, w_dim=w_dim)
+        channels = [512, 512, 256, 128, 64, 32]
+        self.constant = nn.Parameter(torch.randn(1, channels[0], 4, 4))
+
+        blocks: list[nn.Module] = [
+            StyledConv(channels[0], channels[1], w_dim=w_dim, upsample=False),
+            StyledConv(channels[1], channels[1], w_dim=w_dim, upsample=False),
+        ]
+        in_channels = channels[1]
+        for out_channels in channels[2:]:
+            blocks.append(StyledConv(in_channels, out_channels, w_dim=w_dim, upsample=True))
+            blocks.append(StyledConv(out_channels, out_channels, w_dim=w_dim, upsample=False))
+            in_channels = out_channels
+        self.blocks = nn.ModuleList(blocks)
+        self.to_rgb = nn.Sequential(nn.Conv2d(channels[-1], image_channels, 1), nn.Tanh())
+
+    def forward_w(self, w: torch.Tensor) -> torch.Tensor:
+        x = self.constant.repeat(w.size(0), 1, 1, 1)
+        for block in self.blocks:
+            x = block(x, w)
+        return self.to_rgb(x)
+
+    def forward(
+        self,
+        z: torch.Tensor,
+        mixing_z: torch.Tensor | None = None,
+        style_mixing_prob: float = 0.0,
+    ) -> torch.Tensor:
+        w = self.mapping(z)
+        if mixing_z is None or style_mixing_prob <= 0 or random.random() >= style_mixing_prob:
+            return self.forward_w(w)
+
+        w2 = self.mapping(mixing_z)
+        cutoff = random.randint(1, len(self.blocks) - 1)
+        x = self.constant.repeat(z.size(0), 1, 1, 1)
+        for idx, block in enumerate(self.blocks):
+            x = block(x, w if idx < cutoff else w2)
+        return self.to_rgb(x)

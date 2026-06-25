@@ -14,7 +14,7 @@ def load_generator(checkpoint_path: str | Path, device: torch.device | str = "au
     checkpoint = torch.load(checkpoint_path, map_location=device)
     config = checkpoint["config"]
     generator = build_generator(config).to(device)
-    generator.load_state_dict(checkpoint["generator"])
+    generator.load_state_dict(checkpoint.get("generator_ema", checkpoint["generator"]))
     generator.eval()
     return generator, config
 
@@ -32,7 +32,7 @@ def save_samples(
     z_dim = int(config["model"].get("z_dim", 128))
     model_name = config["model"].get("name", "dcgan")
     z = torch.randn(num_images, z_dim, device=device_obj)
-    images = generator(z, style_mixing_prob=0.0) if model_name == "stylegan_lite" else generator(z)
+    images = generator(z, style_mixing_prob=0.0) if model_name.startswith("stylegan_lite") else generator(z)
     output_path = Path(output_path)
     ensure_dir(output_path.parent)
     save_image(denormalize(images), output_path, nrow=nrow)
@@ -58,13 +58,13 @@ def save_interpolations(
         z1 = torch.randn(1, z_dim, device=device_obj)
         z2 = torch.randn(1, z_dim, device=device_obj)
         if space == "w":
-            if model_name != "stylegan_lite":
-                raise ValueError("w-space interpolation is only available for stylegan_lite.")
+            if not model_name.startswith("stylegan_lite"):
+                raise ValueError("w-space interpolation is only available for stylegan_lite models.")
             w1 = generator.mapping(z1)
             w2 = generator.mapping(z2)
             w = (1 - alphas) * w1 + alphas * w2
             images = generator.forward_w(w)
         else:
             z = (1 - alphas) * z1 + alphas * z2
-            images = generator(z, style_mixing_prob=0.0) if model_name == "stylegan_lite" else generator(z)
+            images = generator(z, style_mixing_prob=0.0) if model_name.startswith("stylegan_lite") else generator(z)
         save_image(denormalize(images), output_dir / f"interpolation_{space}_{pair_idx:02d}.png", nrow=steps)
