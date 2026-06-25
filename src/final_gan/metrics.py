@@ -5,7 +5,7 @@ from collections.abc import Iterable
 import torch
 from tqdm import tqdm
 
-from final_gan.utils import images_to_uint8
+from final_gan.utils import denormalize, images_to_uint8
 
 
 def _require_torchmetrics():
@@ -20,6 +20,61 @@ def _require_torchmetrics():
     return FrechetInceptionDistance, InceptionScore
 
 
+def _build_diversity_metric(config: dict, device: torch.device):
+    metric_name = config.get("metric", "ms_ssim")
+    if metric_name == "ms_ssim":
+        from torchmetrics.image import MultiScaleStructuralSimilarityIndexMeasure
+
+        betas = tuple(float(v) for v in config.get("ms_ssim_betas", [0.3, 0.3, 0.4]))
+        return MultiScaleStructuralSimilarityIndexMeasure(data_range=1.0, betas=betas).to(device)
+    raise ValueError(f"Unknown diversity metric '{metric_name}'. Use ms_ssim.")
+
+
+@torch.no_grad()
+def compute_diversity_metrics(
+    images: torch.Tensor,
+    config: dict,
+    device: torch.device,
+    show_progress: bool = True,
+    progress_leave: bool = False,
+) -> dict[str, float]:
+    if images.size(0) < 2:
+        return {}
+
+    metric_name = config.get("metric", "ms_ssim")
+    max_pairs = int(config.get("max_pairs", 512))
+    pair_batch_size = int(config.get("pair_batch_size", 64))
+    num_pairs = min(max_pairs, images.size(0))
+    metric = _build_diversity_metric(config, device)
+
+    idx1 = torch.randint(0, images.size(0), (num_pairs,), device=device)
+    idx2 = torch.randint(0, images.size(0), (num_pairs,), device=device)
+    same = idx1 == idx2
+    idx2[same] = (idx2[same] + 1) % images.size(0)
+
+    progress = tqdm(
+        total=num_pairs,
+        desc=f"eval diversity {metric_name}",
+        unit="pair",
+        leave=progress_leave,
+        disable=not show_progress,
+    )
+    try:
+        for start in range(0, num_pairs, pair_batch_size):
+            end = min(start + pair_batch_size, num_pairs)
+            metric.update(images[idx1[start:end]], images[idx2[start:end]])
+            progress.update(end - start)
+    finally:
+        progress.close()
+
+    value = float(metric.compute().item())
+    result_key = f"diversity_{metric_name}"
+    result = {result_key: value}
+    if metric_name == "ms_ssim":
+        result["diversity_score"] = 1.0 - value
+    return result
+
+
 class ImageMetricsEvaluator:
     def __init__(
         self,
@@ -31,6 +86,7 @@ class ImageMetricsEvaluator:
         batch_size: int = 64,
         show_progress: bool = True,
         progress_leave: bool = False,
+        diversity_config: dict | None = None,
     ) -> None:
         FrechetInceptionDistance, InceptionScore = _require_torchmetrics()
         try:
@@ -53,6 +109,7 @@ class ImageMetricsEvaluator:
         self.batch_size = batch_size
         self.show_progress = show_progress
         self.progress_leave = progress_leave
+        self.diversity_config = diversity_config or {}
         self._real_ready = False
         self._real_cache: dict[str, torch.Tensor] = {}
 
@@ -101,6 +158,9 @@ class ImageMetricsEvaluator:
         generator.eval()
 
         generated = 0
+        diversity_images: list[torch.Tensor] = []
+        diversity_enabled = bool(self.diversity_config.get("enabled", False))
+        diversity_limit = int(self.diversity_config.get("num_images", 512))
         progress = tqdm(
             total=self.num_images,
             desc="eval fake samples",
@@ -112,24 +172,40 @@ class ImageMetricsEvaluator:
             while generated < self.num_images:
                 current = min(self.batch_size, self.num_images - generated)
                 z = torch.randn(current, self.z_dim, device=self.device)
-                if self.model_name == "stylegan_lite":
+                if self.model_name.startswith("stylegan_lite"):
                     fake = generator(z, style_mixing_prob=0.0)
                 else:
                     fake = generator(z)
                 fake_uint8 = images_to_uint8(fake)
                 self.fid.update(fake_uint8, real=False)
                 self.inception.update(fake_uint8)
+                if diversity_enabled and len(diversity_images) < diversity_limit:
+                    remaining = diversity_limit - sum(chunk.size(0) for chunk in diversity_images)
+                    if remaining > 0:
+                        diversity_images.append(denormalize(fake[:remaining]).detach())
                 generated += current
                 progress.update(current)
         finally:
             progress.close()
 
         is_mean, is_std = self.inception.compute()
-        return {
+        result = {
             "fid": float(self.fid.compute().item()),
             "is_mean": float(is_mean.item()),
             "is_std": float(is_std.item()),
         }
+        if diversity_images:
+            diversity_tensor = torch.cat(diversity_images, dim=0)[:diversity_limit].to(self.device)
+            result.update(
+                compute_diversity_metrics(
+                    diversity_tensor,
+                    self.diversity_config,
+                    self.device,
+                    show_progress=self.show_progress,
+                    progress_leave=self.progress_leave,
+                )
+            )
+        return result
 
 
 @torch.no_grad()
@@ -143,6 +219,7 @@ def evaluate_generator(
     batch_size: int = 64,
     show_progress: bool = True,
     progress_leave: bool = False,
+    diversity_config: dict | None = None,
 ) -> dict[str, float]:
     evaluator = ImageMetricsEvaluator(
         dataloader=dataloader,
@@ -153,5 +230,6 @@ def evaluate_generator(
         batch_size=batch_size,
         show_progress=show_progress,
         progress_leave=progress_leave,
+        diversity_config=diversity_config,
     )
     return evaluator.evaluate(generator)

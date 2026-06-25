@@ -74,6 +74,19 @@ E:\Python_env\AI\Scripts\python.exe run.py evaluate --checkpoint runs/dcgan_lfw/
 
 FID compares generated samples with real LFW images. Inception Score is reported for completeness, but it is less meaningful for LFW faces because ImageNet classes are not aligned with face identity or image quality.
 
+Optional diversity evaluation can be enabled in a config:
+
+```yaml
+eval:
+  diversity:
+    enabled: true
+    metric: ms_ssim
+    num_images: 512
+    max_pairs: 512
+```
+
+`diversity_ms_ssim` is pairwise MS-SSIM among generated samples. Lower values mean generated images are less structurally similar and usually more diverse. `diversity_score` is reported as `1 - diversity_ms_ssim` for easier reading.
+
 ## Implementation Notes
 
 The implementation follows the course plan and the referenced papers:

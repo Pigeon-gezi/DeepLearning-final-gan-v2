@@ -6,8 +6,16 @@ from uuid import uuid4
 
 from final_gan.data import build_transforms
 from final_gan.factory import build_discriminator, build_generator, initialize_models
-from final_gan.metrics import _require_torchmetrics
-from final_gan.training import load_training_checkpoint, save_checkpoint, train
+from final_gan.metrics import _require_torchmetrics, compute_diversity_metrics
+from final_gan.training import (
+    create_ema_generator,
+    create_optimizers,
+    load_training_checkpoint,
+    r1_regularization,
+    save_checkpoint,
+    train,
+    update_ema,
+)
 
 
 def test_transform_shape_and_range():
@@ -18,7 +26,7 @@ def test_transform_shape_and_range():
     assert tensor.max().item() <= 1.0
 
 
-@pytest.mark.parametrize("model_name", ["dcgan", "stylegan_lite"])
+@pytest.mark.parametrize("model_name", ["dcgan", "stylegan_lite", "stylegan_lite_v2"])
 def test_generator_and_discriminator_shapes(model_name):
     config = {"model": {"name": model_name, "z_dim": 128, "w_dim": 256}}
     generator = build_generator(config)
@@ -31,6 +39,40 @@ def test_generator_and_discriminator_shapes(model_name):
     assert fake.min().item() >= -1.0
     assert fake.max().item() <= 1.0
     assert logits.shape == (2,)
+
+
+def test_stylegan_v2_uses_separate_learning_rates_and_ema():
+    config = {
+        "model": {"name": "stylegan_lite_v2", "z_dim": 128, "w_dim": 256},
+        "train": {"lr": 0.0002, "lr_g": 0.0002, "lr_d": 0.00005, "beta1": 0.5, "beta2": 0.999},
+    }
+    generator = build_generator(config)
+    discriminator = build_discriminator(config)
+    opt_g, opt_d = create_optimizers(generator, discriminator, config["train"])
+    assert opt_g.param_groups[0]["lr"] == pytest.approx(0.0002)
+    assert opt_d.param_groups[0]["lr"] == pytest.approx(0.00005)
+
+    ema = create_ema_generator(generator, 0.999)
+    assert ema is not None
+    before = next(ema.parameters()).detach().clone()
+    with torch.no_grad():
+        for param in generator.parameters():
+            param.add_(0.1)
+            break
+    update_ema(ema, generator, 0.5)
+    after = next(ema.parameters()).detach()
+    assert not torch.equal(before, after)
+
+
+def test_r1_regularization_backward_on_stylegan_v2_discriminator():
+    config = {"model": {"name": "stylegan_lite_v2", "z_dim": 128, "w_dim": 256}}
+    discriminator = build_discriminator(config)
+    real = torch.randn(2, 3, 64, 64, requires_grad=True)
+    logits = discriminator(real)
+    penalty = r1_regularization(logits, real)
+    penalty.backward()
+    assert penalty.item() >= 0
+    assert real.grad is not None
 
 
 def test_one_training_step_updates_parameters():
@@ -68,6 +110,24 @@ def test_metrics_dependency_message_or_import():
     else:
         assert fid_cls is not None
         assert is_cls is not None
+
+
+def test_ms_ssim_diversity_metric_runs_on_64px_images():
+    images = torch.rand(4, 3, 64, 64)
+    result = compute_diversity_metrics(
+        images,
+        {
+            "metric": "ms_ssim",
+            "max_pairs": 4,
+            "pair_batch_size": 2,
+            "ms_ssim_betas": [0.3, 0.3, 0.4],
+        },
+        torch.device("cpu"),
+        show_progress=False,
+    )
+    assert "diversity_ms_ssim" in result
+    assert "diversity_score" in result
+    assert 0.0 <= result["diversity_ms_ssim"] <= 1.0
 
 
 def _make_test_dir():
