@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 import torch
+from tqdm import tqdm
 
 from final_gan.utils import images_to_uint8
 
@@ -28,6 +29,8 @@ class ImageMetricsEvaluator:
         device: torch.device,
         num_images: int = 2048,
         batch_size: int = 64,
+        show_progress: bool = True,
+        progress_leave: bool = False,
     ) -> None:
         FrechetInceptionDistance, InceptionScore = _require_torchmetrics()
         try:
@@ -48,6 +51,8 @@ class ImageMetricsEvaluator:
         self.device = device
         self.num_images = num_images
         self.batch_size = batch_size
+        self.show_progress = show_progress
+        self.progress_leave = progress_leave
         self._real_ready = False
         self._real_cache: dict[str, torch.Tensor] = {}
 
@@ -56,12 +61,24 @@ class ImageMetricsEvaluator:
         if self._real_ready:
             return
         seen_real = 0
-        for real, _ in self.dataloader:
-            real = real.to(self.device)
-            self.fid.update(images_to_uint8(real), real=True)
-            seen_real += real.size(0)
-            if seen_real >= self.num_images:
-                break
+        progress = tqdm(
+            total=self.num_images,
+            desc="eval real stats",
+            unit="img",
+            leave=self.progress_leave,
+            disable=not self.show_progress,
+        )
+        try:
+            for real, _ in self.dataloader:
+                remaining = self.num_images - seen_real
+                if remaining <= 0:
+                    break
+                real = real[:remaining].to(self.device)
+                self.fid.update(images_to_uint8(real), real=True)
+                seen_real += real.size(0)
+                progress.update(real.size(0))
+        finally:
+            progress.close()
         if self._manual_real_cache:
             self._real_cache = {
                 "real_features_sum": self.fid.real_features_sum.detach().clone(),
@@ -84,17 +101,28 @@ class ImageMetricsEvaluator:
         generator.eval()
 
         generated = 0
-        while generated < self.num_images:
-            current = min(self.batch_size, self.num_images - generated)
-            z = torch.randn(current, self.z_dim, device=self.device)
-            if self.model_name == "stylegan_lite":
-                fake = generator(z, style_mixing_prob=0.0)
-            else:
-                fake = generator(z)
-            fake_uint8 = images_to_uint8(fake)
-            self.fid.update(fake_uint8, real=False)
-            self.inception.update(fake_uint8)
-            generated += current
+        progress = tqdm(
+            total=self.num_images,
+            desc="eval fake samples",
+            unit="img",
+            leave=self.progress_leave,
+            disable=not self.show_progress,
+        )
+        try:
+            while generated < self.num_images:
+                current = min(self.batch_size, self.num_images - generated)
+                z = torch.randn(current, self.z_dim, device=self.device)
+                if self.model_name == "stylegan_lite":
+                    fake = generator(z, style_mixing_prob=0.0)
+                else:
+                    fake = generator(z)
+                fake_uint8 = images_to_uint8(fake)
+                self.fid.update(fake_uint8, real=False)
+                self.inception.update(fake_uint8)
+                generated += current
+                progress.update(current)
+        finally:
+            progress.close()
 
         is_mean, is_std = self.inception.compute()
         return {
@@ -113,6 +141,8 @@ def evaluate_generator(
     device: torch.device,
     num_images: int = 2048,
     batch_size: int = 64,
+    show_progress: bool = True,
+    progress_leave: bool = False,
 ) -> dict[str, float]:
     evaluator = ImageMetricsEvaluator(
         dataloader=dataloader,
@@ -121,5 +151,7 @@ def evaluate_generator(
         device=device,
         num_images=num_images,
         batch_size=batch_size,
+        show_progress=show_progress,
+        progress_leave=progress_leave,
     )
     return evaluator.evaluate(generator)
