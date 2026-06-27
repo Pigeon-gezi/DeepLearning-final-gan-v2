@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
+from datetime import datetime
 
 import torch
 
@@ -69,6 +71,24 @@ def cmd_evaluate(args: argparse.Namespace) -> None:
     for key, value in metrics.items():
         print(f"{key}: {value:.6f}")
 
+    output_path = args.output
+    if output_path is None:
+        output_dir = Path(config.get("paths", {}).get("output_dir", args.checkpoint.parent.parent))
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = output_dir / "evaluations" / f"{args.checkpoint.stem}_n{config['eval'].get('num_images', 2048)}_{timestamp}.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "checkpoint": str(args.checkpoint),
+        "data_root": str(config["data"]["root"]),
+        "model": config["model"].get("name", "dcgan"),
+        "num_images": int(config["eval"].get("num_images", 2048)),
+        "batch_size": int(config["eval"].get("batch_size", 64)),
+        "diversity": config["eval"].get("diversity", {}),
+        "metrics": metrics,
+    }
+    output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(f"Saved evaluation to {output_path}")
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="LFW face generation with DCGAN and StyleGAN-lite.")
@@ -103,6 +123,7 @@ def build_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument("--data-root", default=None)
     eval_parser.add_argument("--num-images", type=int, default=None)
     eval_parser.add_argument("--device", default="auto")
+    eval_parser.add_argument("--output", type=Path, default=None)
     eval_parser.set_defaults(func=cmd_evaluate)
 
     return parser
