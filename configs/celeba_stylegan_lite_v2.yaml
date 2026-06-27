@@ -17,7 +17,7 @@ model:
   use_minibatch_std: true
 
 train:
-  epochs: 30
+  epochs: 150
   batch_size: 64
   lr: 0.0002
   lr_g: 0.0002
