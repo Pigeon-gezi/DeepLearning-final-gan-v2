@@ -277,9 +277,15 @@ def make_image_composites() -> None:
         Image.open(source).save(ASSETS / target)
 
 
-def draw_flow(path: Path, boxes: list[tuple[str, float, float, float, float]], arrows: list[tuple[int, int]], title: str) -> None:
-    fig, ax = plt.subplots(figsize=(9.0, 3.8))
-    ax.set_xlim(0, 10)
+def draw_flow(
+    path: Path,
+    boxes: list[tuple[str, float, float, float, float]],
+    arrows: list[tuple[int, int]],
+    title: str,
+    x_max: float = 10,
+) -> None:
+    fig, ax = plt.subplots(figsize=(9.0 * x_max / 10, 3.8))
+    ax.set_xlim(0, x_max)
     ax.set_ylim(0, 4)
     ax.axis("off")
     ax.set_title(title, fontsize=15, pad=12)
@@ -308,13 +314,14 @@ def make_diagrams() -> None:
         [
             ("CelebA\naligned faces", 0.2, 1.5, 1.5, 0.8),
             ("Preprocess\n64x64, [-1,1]", 2.0, 1.5, 1.6, 0.8),
-            ("Train models\nDCGAN\nStyleGAN-lite\nStyleGAN-lite-v2", 3.75, 1.35, 2.65, 1.1),
-            ("Samples\nand interpolation", 6.85, 2.3, 1.6, 0.8),
-            ("FID / IS\nMS-SSIM", 6.85, 0.7, 1.6, 0.8),
-            ("Report\nanalysis", 8.65, 1.5, 1.2, 0.8),
+            ("Train models\nDCGAN\nStyleGAN-lite\nStyleGAN-lite-v2", 4.1, 1.35, 2.55, 1.1),
+            ("Samples\nand interpolation", 7.2, 2.3, 1.6, 0.8),
+            ("FID / IS\nMS-SSIM", 7.2, 0.7, 1.6, 0.8),
+            ("Report\nanalysis", 9.1, 1.5, 1.25, 0.8),
         ],
         [(0, 1), (1, 2), (2, 3), (2, 4), (3, 5), (4, 5)],
         "Project pipeline",
+        x_max=10.6,
     )
     draw_flow(
         ASSETS / "gan_training_diagram.png",
