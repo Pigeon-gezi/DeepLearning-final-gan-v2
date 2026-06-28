@@ -10,11 +10,16 @@
             name: "赵晨星",
             email: [524030910233],
         ),
+        (
+            name: "祖浩然",
+            email: [524030910250],
+        ),
     ),
     abstract: [
         本文围绕课程大作业中的人头图像生成任务，使用 PyTorch 实现并比较了 DCGAN、StyleGAN-lite 与稳定化改进后的 StyleGAN-lite-v2。DCGAN 作为基础生成模型，在 CelebA 上形成了稳定 baseline；初版 StyleGAN-lite 虽引入 mapping network、AdaIN、噪声注入和 style mixing，但训练中出现明显模式崩溃，最终 10000 张图评估 FID 为 101.64。针对该问题，本文进一步加入每分辨率双 StyledConv、minibatch standard deviation、non-saturating logistic loss、R1 regularization、TTUR 和 generator EMA。最终 StyleGAN-lite-v2 在 10000 张生成图像上达到 FID 12.78，优于 DCGAN 的 FID 24.06，并取得 MS-SSIM 0.1990、diversity score 0.8010，说明其在图像质量和多样性上均有明显改善。
     ],
     bibliography: bibliography("refs.bib"),
+    paper-size: "a4",
 )
 
 #set table(stroke: (x, y) => {
