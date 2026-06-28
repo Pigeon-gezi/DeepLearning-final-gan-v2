@@ -570,32 +570,34 @@ StyleGAN-lite-v2 的改进针对这些现象展开。R1 regularization 限制判
 
 = 附录：复现命令
 
+以下命令均在虚拟环境中运行，环境依赖见 `requirements.txt`
+
 训练 DCGAN：
 
 ```powershell
-E:\Python_env\AI\Scripts\python.exe run.py train --config configs/celeba_dcgan.yaml
+python run.py train --config configs/celeba_dcgan.yaml
 ```
 
 训练 StyleGAN-lite-v2：
 
 ```powershell
-E:\Python_env\AI\Scripts\python.exe run.py train --config configs/celeba_stylegan_lite_v2.yaml
+python run.py train --config configs/celeba_stylegan_lite_v2.yaml
 ```
 
 断点续训：
 
 ```powershell
-E:\Python_env\AI\Scripts\python.exe run.py train --config configs/celeba_stylegan_lite_v2.yaml --resume runs/stylegan_lite_v2_celeba/checkpoints/last.pt
+python run.py train --config configs/celeba_stylegan_lite_v2.yaml --resume runs/stylegan_lite_v2_celeba/checkpoints/last.pt
 ```
 
 最终评估：
 
 ```powershell
-E:\Python_env\AI\Scripts\python.exe run.py evaluate --checkpoint runs/stylegan_lite_v2_celeba/checkpoints/best_fid.pt --data-root data/celeba --num-images 10000
+python run.py evaluate --checkpoint runs/stylegan_lite_v2_celeba/checkpoints/best_fid.pt --data-root data/celeba --num-images 10000
 ```
 
 生成报告图：
 
 ```powershell
-E:\Python_env\AI\Scripts\python.exe scripts\make_report_figures.py
+python scripts\make_report_figures.py
 ```
