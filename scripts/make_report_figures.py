@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Iterable
 
 import matplotlib.pyplot as plt
-from matplotlib.patches import FancyArrowPatch, Rectangle
+from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 from PIL import Image, ImageDraw, ImageFont
 
 
@@ -19,12 +19,12 @@ LOGS = {
 }
 
 EVALS = {
-    "DCGAN": ROOT / "runs" / "dcgan_celeba" / "evaluations" / "best_fid_n10000_20260627_195503.json",
+    "DCGAN": ROOT / "runs" / "dcgan_celeba" / "evaluations" / "best_fid_n10000_20260628_003658.json",
     "StyleGAN-lite": ROOT
     / "runs"
     / "stylegan_lite_celeba"
     / "evaluations"
-    / "best_fid_n10000_20260627_211631.json",
+    / "best_fid_n10000_20260628_010315.json",
     "StyleGAN-lite-v2": ROOT
     / "runs"
     / "stylegan_lite_v2_celeba"
@@ -119,6 +119,7 @@ def plot_final_bars(evals: dict[str, dict]) -> None:
     fid = [float(evals[name]["metrics"]["fid"]) for name in names]
     is_mean = [float(evals[name]["metrics"]["is_mean"]) for name in names]
     is_std = [float(evals[name]["metrics"]["is_std"]) for name in names]
+    diversity = [float(evals[name]["metrics"]["diversity_score"]) for name in names]
     colors = [COLORS[name] for name in names]
 
     plt.figure(figsize=(6.4, 4.0))
@@ -140,6 +141,17 @@ def plot_final_bars(evals: dict[str, dict]) -> None:
     for idx, value in enumerate(is_mean):
         plt.text(idx, value + 0.08, f"{value:.2f}", ha="center", fontsize=9)
     save_plot(ASSETS / "final_is_bar.png")
+
+    plt.figure(figsize=(6.4, 4.0))
+    plt.bar(names, diversity, color=colors)
+    plt.ylabel("Diversity score (1 - MS-SSIM)")
+    plt.title("Final diversity on 512 generated samples")
+    plt.xticks(rotation=15, ha="right")
+    plt.ylim(0, 1.0)
+    plt.grid(axis="y", alpha=0.25)
+    for idx, value in enumerate(diversity):
+        plt.text(idx, value + 0.025, f"{value:.3f}", ha="center", fontsize=9)
+    save_plot(ASSETS / "final_diversity_bar.png")
 
 
 def plot_metrics_dashboard(logs: dict[str, list[dict]], evals: dict[str, dict]) -> None:
@@ -277,6 +289,19 @@ def make_image_composites() -> None:
         Image.open(source).save(ASSETS / target)
 
 
+def node_color(label: str) -> tuple[str, str]:
+    label_lower = label.lower()
+    if any(token in label_lower for token in ("celeba", "real", "preprocess", "image")):
+        return "#e8f3f1", "#2f6f63"
+    if any(token in label_lower for token in ("train", "generator", "discriminator", "styledconv", "mapping", "dcgan", "stylegan")):
+        return "#eef1fb", "#4a5f9e"
+    if any(token in label_lower for token in ("fid", "is", "ms-ssim", "evaluation", "statistics", "loss")):
+        return "#fff4df", "#a46c12"
+    if any(token in label_lower for token in ("report", "json", "samples", "interpolation", "torgb")):
+        return "#f4ecf7", "#7b4b8d"
+    return "#f5f7fa", "#2d4059"
+
+
 def draw_flow(
     path: Path,
     boxes: list[tuple[str, float, float, float, float]],
@@ -288,11 +313,42 @@ def draw_flow(
     ax.set_xlim(0, x_max)
     ax.set_ylim(0, 4)
     ax.axis("off")
-    ax.set_title(title, fontsize=15, pad=12)
+    ax.set_title(title, fontsize=15, pad=12, fontweight="bold", color="#263238")
     for label, x, y, w, h in boxes:
-        rect = Rectangle((x, y), w, h, linewidth=1.5, edgecolor="#2d4059", facecolor="#edf2f7")
+        fill, edge = node_color(label)
+        shadow = FancyBboxPatch(
+            (x + 0.035, y - 0.035),
+            w,
+            h,
+            boxstyle="round,pad=0.035,rounding_size=0.05",
+            linewidth=0,
+            facecolor="#d7dde6",
+            alpha=0.65,
+            zorder=1,
+        )
+        rect = FancyBboxPatch(
+            (x, y),
+            w,
+            h,
+            boxstyle="round,pad=0.035,rounding_size=0.05",
+            linewidth=1.6,
+            edgecolor=edge,
+            facecolor=fill,
+            zorder=2,
+        )
+        ax.add_patch(shadow)
         ax.add_patch(rect)
-        ax.text(x + w / 2, y + h / 2, label, ha="center", va="center", fontsize=10, wrap=True)
+        ax.text(
+            x + w / 2,
+            y + h / 2,
+            label,
+            ha="center",
+            va="center",
+            fontsize=9.8,
+            color="#17212b",
+            wrap=True,
+            zorder=3,
+        )
     for start, end in arrows:
         _, x1, y1, w1, h1 = boxes[start]
         _, x2, y2, _, h2 = boxes[end]
@@ -300,11 +356,221 @@ def draw_flow(
             (x1 + w1, y1 + h1 / 2),
             (x2, y2 + h2 / 2),
             arrowstyle="->",
-            mutation_scale=14,
-            linewidth=1.5,
-            color="#333333",
+            mutation_scale=15,
+            linewidth=1.8,
+            color="#34495e",
+            shrinkA=8,
+            shrinkB=8,
+            zorder=0,
         )
         ax.add_patch(arrow)
+    save_plot(path)
+
+
+def draw_box(
+    ax,
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    text: str,
+    fill: str,
+    edge: str,
+    fontsize: float = 9.2,
+    linewidth: float = 1.6,
+    linestyle: str = "-",
+) -> None:
+    shadow = FancyBboxPatch(
+        (x + 0.035, y - 0.035),
+        w,
+        h,
+        boxstyle="round,pad=0.035,rounding_size=0.05",
+        linewidth=0,
+        facecolor="#d7dde6",
+        alpha=0.6,
+        zorder=1,
+    )
+    box = FancyBboxPatch(
+        (x, y),
+        w,
+        h,
+        boxstyle="round,pad=0.035,rounding_size=0.05",
+        linewidth=linewidth,
+        edgecolor=edge,
+        facecolor=fill,
+        linestyle=linestyle,
+        zorder=2,
+    )
+    ax.add_patch(shadow)
+    ax.add_patch(box)
+    ax.text(x + w / 2, y + h / 2, text, ha="center", va="center", fontsize=fontsize, color="#17212b", zorder=3)
+
+
+def draw_arrow(ax, start: tuple[float, float], end: tuple[float, float], dashed: bool = False, color: str = "#34495e") -> None:
+    arrow = FancyArrowPatch(
+        start,
+        end,
+        arrowstyle="->",
+        mutation_scale=14,
+        linewidth=1.6,
+        color=color,
+        linestyle="--" if dashed else "-",
+        shrinkA=6,
+        shrinkB=6,
+        zorder=0,
+    )
+    ax.add_patch(arrow)
+
+
+def draw_feature_stack(
+    ax,
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    label: str,
+    fill: str,
+    edge: str,
+    depth: int = 3,
+    fontsize: float = 8.6,
+) -> None:
+    for idx in range(depth - 1, -1, -1):
+        dx = idx * 0.055
+        dy = idx * 0.045
+        patch = FancyBboxPatch(
+            (x + dx, y + dy),
+            w,
+            h,
+            boxstyle="round,pad=0.025,rounding_size=0.035",
+            linewidth=1.0 if idx else 1.6,
+            edgecolor=edge,
+            facecolor=fill,
+            alpha=0.62 + 0.12 * (depth - idx),
+            zorder=2 + idx,
+        )
+        ax.add_patch(patch)
+    ax.text(x + w / 2, y + h / 2, label, ha="center", va="center", fontsize=fontsize, color="#17212b", zorder=8)
+
+
+def draw_legend(ax, x: float, y: float, items: list[tuple[str, str, str]]) -> None:
+    for idx, (label, fill, edge) in enumerate(items):
+        yy = y - idx * 0.28
+        patch = FancyBboxPatch(
+            (x, yy),
+            0.18,
+            0.14,
+            boxstyle="round,pad=0.02,rounding_size=0.02",
+            linewidth=1.0,
+            edgecolor=edge,
+            facecolor=fill,
+        )
+        ax.add_patch(patch)
+        ax.text(x + 0.25, yy + 0.07, label, va="center", fontsize=7.5, color="#263238")
+
+
+def draw_dcgan_architecture() -> None:
+    fig, ax = plt.subplots(figsize=(11.2, 4.2))
+    ax.set_xlim(0, 12)
+    ax.set_ylim(0, 4)
+    ax.axis("off")
+    ax.set_title("DCGAN generator", fontsize=17, pad=12, fontweight="bold", color="#263238")
+
+    draw_box(ax, 0.25, 1.55, 0.85, 0.7, "Latent\nz=128", "#f5f7fa", "#2d4059")
+    draw_box(ax, 1.55, 1.42, 1.1, 0.95, "Linear\nBatchNorm\nReLU", "#eef1fb", "#4a5f9e", fontsize=8.2)
+    stacks = [
+        (3.05, 1.44, 1.08, 0.88, "4x4\n512", "#eef1fb", "#4a5f9e"),
+        (4.65, 1.36, 1.15, 1.02, "8x8\n256", "#e8f3f1", "#2f6f63"),
+        (6.32, 1.28, 1.22, 1.18, "16x16\n128", "#e8f3f1", "#2f6f63"),
+        (8.06, 1.18, 1.30, 1.36, "32x32\n64", "#e8f3f1", "#2f6f63"),
+        (9.9, 1.08, 1.42, 1.55, "64x64\nRGB", "#f4ecf7", "#7b4b8d"),
+    ]
+    for x, y, w, h, label, fill, edge in stacks:
+        draw_feature_stack(ax, x, y, w, h, label, fill, edge)
+
+    arrow_edges = [
+        ((1.1, 1.9), (1.55, 1.9)),
+        ((2.65, 1.9), (3.05, 1.9)),
+        ((4.13, 1.9), (4.65, 1.9)),
+        ((5.8, 1.9), (6.32, 1.9)),
+        ((7.54, 1.9), (8.06, 1.9)),
+        ((9.36, 1.9), (9.9, 1.9)),
+    ]
+    for start, end in arrow_edges:
+        draw_arrow(ax, start, end)
+
+    ax.text(5.95, 0.72, "ConvTranspose2d + BatchNorm + ReLU", ha="center", fontsize=8.5, color="#455a64")
+    ax.text(10.6, 0.72, "Tanh output", ha="center", fontsize=8.5, color="#455a64")
+    draw_legend(
+        ax,
+        0.35,
+        0.45,
+        [
+            ("latent/projection", "#eef1fb", "#4a5f9e"),
+            ("feature maps", "#e8f3f1", "#2f6f63"),
+            ("RGB output", "#f4ecf7", "#7b4b8d"),
+        ],
+    )
+    save_plot(ASSETS / "dcgan_architecture.png")
+
+
+def draw_stylegan_architecture(path: Path, title: str, two_convs: bool) -> None:
+    fig, ax = plt.subplots(figsize=(13.8, 5.2))
+    ax.set_xlim(0, 14.2)
+    ax.set_ylim(0, 5)
+    ax.axis("off")
+    ax.set_title(title, fontsize=17, pad=12, fontweight="bold", color="#263238")
+
+    draw_box(ax, 0.25, 3.65, 0.7, 0.52, "z", "#f5f7fa", "#2d4059")
+    draw_box(ax, 1.25, 3.5, 1.35, 0.82, "Mapping\n4-layer MLP", "#eef1fb", "#4a5f9e", fontsize=8.8)
+    draw_box(ax, 2.95, 3.65, 0.7, 0.52, "w", "#f5f7fa", "#2d4059")
+    draw_arrow(ax, (0.95, 3.91), (1.25, 3.91))
+    draw_arrow(ax, (2.6, 3.91), (2.95, 3.91))
+
+    # Style bus: w controls every synthesis block through AdaIN.
+    ax.plot([3.65, 12.1], [4.42, 4.42], color="#7b4b8d", linewidth=1.8, linestyle="--")
+    ax.text(7.35, 4.58, "style control via AdaIN", ha="center", fontsize=8.8, color="#7b4b8d")
+    draw_arrow(ax, (3.35, 3.92), (3.8, 4.42), dashed=True, color="#7b4b8d")
+
+    draw_box(ax, 0.9, 1.18, 1.35, 0.82, "Learned\n4x4 constant", "#f5f7fa", "#2d4059", fontsize=8.8)
+
+    resolutions = ["4x4", "8x8", "16x16", "32x32", "64x64"]
+    channels = ["512", "256", "128", "64", "32"]
+    x0 = 3.0
+    block_w = 1.35
+    gap = 0.58
+    prev_right = 2.25
+    for idx, (resolution, channel) in enumerate(zip(resolutions, channels)):
+        x = x0 + idx * (block_w + gap)
+        text = ("2 x StyledConv" if two_convs else "StyledConv") + f"\n{resolution}\nC={channel}"
+        fill = "#eef1fb" if idx == 0 else "#e8f3f1"
+        edge = "#4a5f9e" if idx == 0 else "#2f6f63"
+        draw_feature_stack(ax, x, 1.25, block_w, 1.08, text, fill, edge, depth=2 if two_convs else 1, fontsize=7.8)
+        draw_arrow(ax, (prev_right, 1.78), (x, 1.78))
+        prev_right = x + block_w
+        # Per-layer noise and AdaIN hints.
+        ax.plot([x + block_w / 2, x + block_w / 2], [4.42, 2.38], color="#7b4b8d", linewidth=1.1, linestyle="--")
+        draw_arrow(ax, (x + block_w / 2, 4.42), (x + block_w / 2, 2.38), dashed=True, color="#7b4b8d")
+        ax.text(x + block_w / 2, 0.9, "noise", ha="center", fontsize=7.3, color="#a46c12")
+        draw_arrow(ax, (x + block_w / 2, 1.02), (x + block_w / 2, 1.22), dashed=True, color="#a46c12")
+        if idx > 0:
+            ax.text(x - 0.29, 2.55, "upsample", rotation=25, fontsize=7.2, color="#455a64")
+
+    draw_box(ax, 12.55, 1.38, 1.1, 0.8, "ToRGB\nTanh", "#f4ecf7", "#7b4b8d")
+    draw_arrow(ax, (prev_right, 1.78), (12.55, 1.78))
+    draw_box(ax, 12.55, 0.45, 1.1, 0.55, "RGB\n64x64", "#f4ecf7", "#7b4b8d", fontsize=8.4)
+    draw_arrow(ax, (13.1, 1.38), (13.1, 1.0))
+
+    draw_legend(
+        ax,
+        0.35,
+        0.55,
+        [
+            ("mapping/style", "#eef1fb", "#4a5f9e"),
+            ("synthesis feature block", "#e8f3f1", "#2f6f63"),
+            ("style/noise branch", "#fff4df", "#a46c12"),
+            ("RGB output", "#f4ecf7", "#7b4b8d"),
+        ],
+    )
     save_plot(path)
 
 
@@ -312,9 +578,9 @@ def make_diagrams() -> None:
     draw_flow(
         ASSETS / "project_pipeline.png",
         [
-            ("CelebA\naligned faces", 0.2, 1.5, 1.5, 0.8),
-            ("Preprocess\n64x64, [-1,1]", 2.0, 1.5, 1.6, 0.8),
-            ("Train models\nDCGAN\nStyleGAN-lite\nStyleGAN-lite-v2", 4.1, 1.35, 2.55, 1.1),
+            ("CelebA\naligned faces", 0.15, 1.5, 1.45, 0.8),
+            ("Preprocess\n64x64, [-1,1]", 2.05, 1.5, 1.55, 0.8),
+            ("Train models\nDCGAN\nStyleGAN-lite\nStyleGAN-lite-v2", 4.15, 1.35, 2.55, 1.1),
             ("Samples\nand interpolation", 7.2, 2.3, 1.6, 0.8),
             ("FID / IS\nMS-SSIM", 7.2, 0.7, 1.6, 0.8),
             ("Report\nanalysis", 9.1, 1.5, 1.25, 0.8),
@@ -336,46 +602,12 @@ def make_diagrams() -> None:
         [(0, 1), (1, 2), (2, 4), (3, 4), (4, 5)],
         "GAN adversarial training",
     )
-    draw_flow(
-        ASSETS / "dcgan_architecture.png",
-        [
-            ("z\n128", 0.2, 1.5, 1.0, 0.7),
-            ("Linear\n4x4x512", 1.6, 1.5, 1.4, 0.7),
-            ("Deconv\n8x8x256", 3.3, 1.5, 1.4, 0.7),
-            ("Deconv\n16x16x128", 5.0, 1.5, 1.4, 0.7),
-            ("Deconv\n32x32x64", 6.7, 1.5, 1.4, 0.7),
-            ("Tanh\n64x64x3", 8.4, 1.5, 1.2, 0.7),
-        ],
-        [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)],
-        "DCGAN generator",
-    )
-    draw_flow(
-        ASSETS / "stylegan_lite_architecture.png",
-        [
-            ("z", 0.2, 2.3, 0.8, 0.6),
-            ("Mapping\nMLP", 1.3, 2.3, 1.2, 0.6),
-            ("w", 2.9, 2.3, 0.8, 0.6),
-            ("Learned\nconstant", 1.3, 0.9, 1.2, 0.6),
-            ("StyledConv\nAdaIN + noise", 4.0, 1.6, 1.8, 0.8),
-            ("Upsample\nblocks", 6.2, 1.6, 1.5, 0.8),
-            ("ToRGB\n64x64", 8.1, 1.6, 1.2, 0.8),
-        ],
-        [(0, 1), (1, 2), (2, 4), (3, 4), (4, 5), (5, 6)],
-        "StyleGAN-lite generator",
-    )
-    draw_flow(
+    draw_dcgan_architecture()
+    draw_stylegan_architecture(ASSETS / "stylegan_lite_architecture.png", "StyleGAN-lite generator", two_convs=False)
+    draw_stylegan_architecture(
         ASSETS / "stylegan_lite_v2_architecture.png",
-        [
-            ("z", 0.2, 2.3, 0.8, 0.6),
-            ("Mapping\n4-layer MLP", 1.3, 2.3, 1.3, 0.6),
-            ("w", 3.0, 2.3, 0.8, 0.6),
-            ("Learned\n4x4 constant", 1.3, 0.9, 1.3, 0.6),
-            ("2x StyledConv\nper resolution", 4.0, 1.6, 1.8, 0.8),
-            ("Noise + AdaIN\nstyle control", 6.2, 1.6, 1.7, 0.8),
-            ("ToRGB\n64x64", 8.3, 1.6, 1.2, 0.8),
-        ],
-        [(0, 1), (1, 2), (2, 4), (3, 4), (4, 5), (5, 6)],
         "StyleGAN-lite-v2 generator",
+        two_convs=True,
     )
     draw_flow(
         ASSETS / "evaluation_pipeline.png",

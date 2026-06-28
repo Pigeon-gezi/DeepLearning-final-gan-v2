@@ -7,7 +7,7 @@ from datetime import datetime
 
 import torch
 
-from final_gan.config import load_config
+from final_gan.config import deep_update, load_config
 from final_gan.data import build_dataloader
 from final_gan.metrics import evaluate_generator
 from final_gan.training import train
@@ -50,6 +50,9 @@ def cmd_interpolate(args: argparse.Namespace) -> None:
 def cmd_evaluate(args: argparse.Namespace) -> None:
     device = get_device(args.device)
     generator, config = load_generator(args.checkpoint, device)
+    if args.config:
+        override_config = load_config(args.config)
+        config = deep_update(config, {"eval": override_config.get("eval", {})})
     if args.data_root:
         config["data"]["root"] = args.data_root
     if args.num_images:
@@ -120,6 +123,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     eval_parser = subparsers.add_parser("evaluate", help="Compute FID and Inception Score.")
     eval_parser.add_argument("--checkpoint", required=True, type=Path)
+    eval_parser.add_argument("--config", type=Path, default=None, help="Optional evaluation override YAML.")
     eval_parser.add_argument("--data-root", default=None)
     eval_parser.add_argument("--num-images", type=int, default=None)
     eval_parser.add_argument("--device", default="auto")

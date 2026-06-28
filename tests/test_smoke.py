@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from final_gan.data import build_transforms
+from final_gan.config import deep_update, load_config
 from final_gan.factory import build_discriminator, build_generator, initialize_models
 from final_gan.metrics import _require_torchmetrics, compute_diversity_metrics
 from final_gan.training import (
@@ -128,6 +129,23 @@ def test_ms_ssim_diversity_metric_runs_on_64px_images():
     assert "diversity_ms_ssim" in result
     assert "diversity_score" in result
     assert 0.0 <= result["diversity_ms_ssim"] <= 1.0
+
+
+def test_evaluation_override_only_updates_eval_section():
+    checkpoint_config = {
+        "data": {"root": "data/celeba"},
+        "model": {"name": "dcgan", "z_dim": 128},
+        "train": {"batch_size": 32},
+        "eval": {"num_images": 2048, "batch_size": 64, "diversity": {"enabled": False}},
+    }
+    override = load_config("configs/evaluation.yaml")
+    merged = deep_update(checkpoint_config, {"eval": override["eval"]})
+    assert merged["model"]["name"] == "dcgan"
+    assert merged["data"]["root"] == "data/celeba"
+    assert merged["train"]["batch_size"] == 32
+    assert merged["eval"]["num_images"] == 10000
+    assert merged["eval"]["diversity"]["enabled"] is True
+    assert merged["eval"]["diversity"]["metric"] == "ms_ssim"
 
 
 def _make_test_dir():

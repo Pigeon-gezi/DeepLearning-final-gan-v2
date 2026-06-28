@@ -1,0 +1,10 @@
+eval:
+    num_images: 10000
+    batch_size: 64
+    diversity:
+        enabled: true
+        metric: ms_ssim
+        num_images: 512
+        max_pairs: 512
+        pair_batch_size: 64
+        ms_ssim_betas: [0.3, 0.3, 0.4]

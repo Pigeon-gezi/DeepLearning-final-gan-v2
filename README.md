@@ -127,16 +127,23 @@ Compute FID and Inception Score from a checkpoint:
 E:\Python_env\AI\Scripts\python.exe run.py evaluate --checkpoint runs/stylegan_lite_v2_celeba/checkpoints/best_fid.pt --data-root data/celeba --num-images 2048
 ```
 
+Use a shared evaluation config to override checkpoint evaluation settings, such as enabling MS-SSIM diversity for all models:
+
+```powershell
+E:\Python_env\AI\Scripts\python.exe run.py evaluate --checkpoint runs/dcgan_celeba/checkpoints/best_fid.pt --config configs/evaluation.yaml --data-root data/celeba
+```
+
 Optional arguments:
 
 ```text
+--config <yaml>
 --data-root <path>
 --num-images 2048
 --device auto
 --output <json>
 ```
 
-Evaluation shows progress bars for real FID statistics, fake samples, and optional diversity pairs. Real FID statistics are cached inside the evaluator during training, so later evaluations in the same run only recompute generated samples.
+Evaluation loads model/data settings from the checkpoint. If `--config` is provided, only its `eval` section is merged as an override; model architecture and training settings remain those stored in the checkpoint. Evaluation shows progress bars for real FID statistics, fake samples, and optional diversity pairs. Real FID statistics are cached inside the evaluator during training, so later evaluations in the same run only recompute generated samples.
 
 Single-run evaluation prints metrics to the terminal and saves them as JSON. If `--output` is omitted, results are written under the experiment directory:
 
@@ -171,7 +178,7 @@ The diversity interface is config-driven so another metric, such as LPIPS, can b
 E:\Python_env\AI\Scripts\python.exe run.py train --config <yaml> [--data-root <path>] [--output-dir <path>] [--resume <checkpoint>]
 E:\Python_env\AI\Scripts\python.exe run.py generate --checkpoint <pt> --output <png> [--num-images 64] [--nrow 8] [--device auto]
 E:\Python_env\AI\Scripts\python.exe run.py interpolate --checkpoint <pt> --output-dir <dir> [--pairs 2] [--steps 11] [--space z|w] [--device auto]
-E:\Python_env\AI\Scripts\python.exe run.py evaluate --checkpoint <pt> [--data-root <path>] [--num-images 2048] [--device auto] [--output <json>]
+E:\Python_env\AI\Scripts\python.exe run.py evaluate --checkpoint <pt> [--config <yaml>] [--data-root <path>] [--num-images 2048] [--device auto] [--output <json>]
 ```
 
 ## Implementation Notes
